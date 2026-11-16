@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Pipeline</title>
+  <style>
+    :root { --bg: #0f1115; --card: #181b22; --text: #e8eaf0; --muted: #8b93a7; --accent: #e5484d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+    h1 { margin: 0 0 4px; }
+    p.sub { color: var(--muted); margin: 0 0 28px; }
+    .drop { border: 2px dashed #333a48; border-radius: 14px; padding: 40px; text-align: center; cursor: pointer; transition: .2s; }
+    .drop:hover, .drop.over { border-color: var(--accent); background: #1b1416; }
+    input[type=file] { display: none; }
+    .job { background: var(--card); border-radius: 12px; padding: 18px; margin-top: 18px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+    .bar { height: 8px; background: #262b36; border-radius: 99px; overflow: hidden; margin: 12px 0; }
+    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+    .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .thumbs img { width: 100%; border-radius: 8px; display: block; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🎬 Video Pipeline</h1>
+    <p class="sub">Envie um vídeo: ele entra na fila, um worker gera as thumbnails e você acompanha o progresso.</p>
+
+    <label class="drop" id="drop">
+      <strong>Clique ou arraste um vídeo aqui</strong>
+      <div class="muted">MP4, WebM, MOV...</div>
+      <input type="file" id="file" accept="video/*" />
+    </label>
+
+    <div id="jobs"></div>
+  </main>
+
+  <script>
+    const drop = document.getElementById('drop');
+    const input = document.getElementById('file');
+    const jobs = document.getElementById('jobs');
+
+    input.addEventListener('change', () => input.files[0] && enviar(input.files[0]));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      if (e.dataTransfer.files[0]) enviar(e.dataTransfer.files[0]);
+    });
+
+    async function enviar(file) {
+      const card = document.createElement('div');
+      card.className = 'job';
+      card.innerHTML = '<div class="row"><strong></strong><span class="status muted">enviando...</span></div>' +
+        '<div class="bar"><span></span></div><div class="info muted"></div><div class="thumbs"></div>';
+      card.querySelector('strong').textContent = file.name;
+      jobs.prepend(card);
+
+      const form = new FormData();
+      form.append('video', file);
+      const resp = await fetch('/api/videos', { method: 'POST', body: form });
+      const dados = await resp.json();
+      if (!resp.ok) {
+        card.querySelector('.status').textContent = dados.erro || 'erro no upload';
+        return;
+      }
+      acompanhar(dados.id, card);
+    }
+
+    async function acompanhar(id, card) {
+      const resp = await fetch('/api/videos/' + id);
+      const job = await resp.json();
+      card.querySelector('.status').textContent = job.status + ' · ' + (job.progresso || 0) + '%';
+      card.querySelector('.bar span').style.width = (job.progresso || 0) + '%';
+
+      if (job.status === 'completed') {
+        const r = job.resultado;
+        card.querySelector('.info').textContent = r.duracao + ' · ' + r.resolucao + ' · ' + r.codec;
+        card.querySelector('.thumbs').innerHTML = r.thumbnails
+          .map((t) => '<img src="' + t.url + '" alt="Thumbnail em ' + t.segundo + 's" />')
+          .join('');
+      } else if (job.status === 'failed') {
+        card.querySelector('.info').textContent = 'Falhou: ' + job.erro;
+      } else {
+        setTimeout(() => acompanhar(id, card), 1000);
+      }
+    }
+  </script>
+</body>
+</html>

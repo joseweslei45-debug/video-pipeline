@@ -1,0 +1,32 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      REDIS_HOST: redis
+      STORAGE_DIR: /data
+    volumes:
+      - storage:/data
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: ["node", "src/worker.js"]
+    environment:
+      REDIS_HOST: redis
+      STORAGE_DIR: /data
+      WORKER_CONCURRENCY: 2
+    volumes:
+      - storage:/data
+    depends_on:
+      - redis
+
+volumes:
+  storage:
